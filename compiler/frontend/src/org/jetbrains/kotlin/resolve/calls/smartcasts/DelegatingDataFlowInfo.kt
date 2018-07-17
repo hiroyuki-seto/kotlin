@@ -33,8 +33,15 @@ import java.util.*
 
 private typealias ImmutableMultimap<K, V> = ImmutableMap<K, ImmutableSet<V>>
 
-private fun <K, V> ImmutableMultimap<K, V>.put(key: K, value: V): ImmutableMultimap<K, V> =
-    put(key, this[key].getOrElse(ImmutableLinkedHashSet.empty<V>()).add(value))
+private fun <K, V> ImmutableMap<K, V>.putIfValueIsDifferent(key: K, value: V): ImmutableMap<K, V> =
+    if (get(key).getOrElse(null as V?) != value) put(key, value) else this
+
+private fun <K, V> ImmutableMultimap<K, V>.put(key: K, value: V): ImmutableMultimap<K, V> {
+    val oldSet = this[key].getOrElse(ImmutableLinkedHashSet.empty<V>())
+    if (oldSet.contains(value)) return this
+
+    return put(key, oldSet.add(value))
+}
 
 internal class DelegatingDataFlowInfo private constructor(
     override val completeNullabilityInfo: ImmutableMap<DataFlowValue, Nullability>,
@@ -361,13 +368,13 @@ internal class DelegatingDataFlowInfo private constructor(
                 updatedNullabilityInfo.entries.fold(
                     parent?.completeNullabilityInfo ?: EMPTY_NULLABILITY_INFO
                 ) { result, (dataFlowValue, nullability) ->
-                    result.put(dataFlowValue, nullability)
+                    result.putIfValueIsDifferent(dataFlowValue, nullability)
                 }
 
             var resultingTypeInfo = parent?.completeTypeInfo ?: EMPTY_TYPE_INFO
 
             valueToClearPreviousTypeInfo?.let {
-                resultingTypeInfo = resultingTypeInfo.put(it, ImmutableLinkedHashSet.empty())
+                resultingTypeInfo = resultingTypeInfo.putIfValueIsDifferent(it, ImmutableLinkedHashSet.empty())
             }
 
             for ((value, types) in updatedTypeInfo) {
